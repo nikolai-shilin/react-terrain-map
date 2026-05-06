@@ -43,18 +43,30 @@ if (!root) throw new Error('Missing #root element');
 createRoot(root).render(
   <StrictMode>
     <div style={{
-      width: '50vw',
-      height: '50vh',
-    }
-    }>
-    <TerrainMap 
-    locations={LOCATIONS} 
-    controls={{
-      locations: false,
-      info: true,   
-      verticalExaggeration: false,
-    }}
-    />
+      width: '100vw',
+      height: '100vh',
+      textAlign: 'center',
+      padding: '1em',
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      justifyContent: 'center',
+    }}>
+      <div style={{
+        width: '80vw',
+        height: '50vh',
+        
+      }
+      }>
+        <TerrainMap
+          locations={LOCATIONS}
+          controls={{
+            locations: false,
+            info: true,
+            verticalExaggeration: false,
+          }}
+        />
+      </div>
     </div>
   </StrictMode>,
 );
