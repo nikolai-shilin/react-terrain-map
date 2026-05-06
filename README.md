@@ -6,10 +6,14 @@ with TypeScript declarations.
 
 - Real elevation from AWS Open Data **Terrain Tiles** (terrarium-encoded PNG)
 - Drape from **ESRI World Imagery** — both sources are public, no API key
-- A 3D plane mesh with up to 1024 × 1024 segments, displaced with bilinear
+- A 3D plane mesh with up to 2048 × 2048 segments, displaced with bilinear
   elevation sampling
-- Coastline-aware sailing routes — A\* through a sea / land mask derived
-  from the DEM, so the line is guaranteed to stay over water
+- Two route modes:
+  - **Sea routes** — coastline-aware A\* through a sea / land mask derived
+    from the DEM, so the line is guaranteed to stay over water
+  - **Altitude routes** — set `alt` on any waypoint and the route is drawn
+    as a 3-D polyline at the supplied altitudes (metres above sea level),
+    with port markers anchored from the ground up to the altitude
 - Map-style controls — left-drag pans, right-drag rotates, scroll zooms,
   arrow keys yaw / tilt
 - Optional summit marker (auto-detected) or named "orbit point" per location
@@ -98,7 +102,12 @@ interface Location {
   name: string;
   subtitle: string;
 
-  /** Geographic centre of the loaded ~125 km tile grid. */
+  /**
+   * Geographic centre of the loaded tile grid. Ignored when `route` is set
+   * — in that case the grid is centred on the route's bounding-box midpoint
+   * and sized to fit it with a configurable padding (10 % per side by
+   * default — see `TILES.routePaddingFactor` in `src/TerrainMap/config.ts`).
+   */
   lat: number;
   lon: number;
 
@@ -121,6 +130,14 @@ interface Route {
 interface Waypoint {
   lat: number;
   lon: number;
+  /**
+   * Altitude in metres above sea level. When any waypoint in a route has
+   * an altitude, the route switches into altitude mode: a straight 3-D
+   * polyline through the waypoints (waypoints without an `alt` default
+   * to 0). Altitudes scale with the vertical-exaggeration slider so the
+   * route stays anchored to the (also-exaggerated) terrain.
+   */
+  alt?: number;
   /** When set, a port pin is drawn at the waypoint. */
   label?: string;
 }
@@ -178,9 +195,11 @@ out of the box.
 - WebGL 2 (covered by all modern evergreen browsers)
 - ES 2022 — Chrome 94+, Edge 94+, Safari 16+, Firefox 93+
 
-The component pulls 256 elevation tiles + 256 imagery tiles per location at
-zoom 12, so first-load is data-heavy on slow connections; tiles are
-cached in memory and reused when the user switches back.
+By default the component pulls 256 elevation + 256 imagery tiles per
+location at zoom 12 (a 16 × 16 grid). When the location has a `route`,
+the grid is sized to fit the route's bounding box plus padding, so tile
+count scales with route extent. Tiles are cached in memory and reused
+when the user switches back.
 
 ## Development
 

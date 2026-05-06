@@ -1,15 +1,35 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { TerrainMap, type Location } from './TerrainMap';
+import { TEST_ROUTE } from './test-route';
 import './style.css';
 
 const LOCATIONS: Location[] = [
+  // {
+  //   id: 'test-flight',
+  //   name: 'Recorded flight',
+  //   subtitle: 'GPS log (test-route.csv)',
+  //   route: {
+  //     name: 'Tracked flight',
+  //     waypoints: TEST_ROUTE.map(({ lat, lon, alt }, i) => ({
+  //       lat,
+  //       lon,
+  //       alt,
+  //       label:
+  //         i === 0
+  //           ? 'Start'
+  //           : i === TEST_ROUTE.length - 1
+  //             ? 'End'
+  //             : undefined,
+  //     })),
+  //   },
+  // },
   {
     id: 'babadag',
     name: 'Babadağ',
     subtitle: 'Fethiye, Türkiye',
-    lat: 36.65,
-    lon: 28.85,
+    // lat: 36.65,
+    // lon: 28.85,
     route: {
       name: 'Marmaris → Ölüdeniz',
       waypoints: [
@@ -61,9 +81,9 @@ createRoot(root).render(
         <TerrainMap
           locations={LOCATIONS}
           controls={{
-            locations: false,
+            locations: true,
             info: true,
-            verticalExaggeration: false,
+            verticalExaggeration: true,
           }}
         />
       </div>

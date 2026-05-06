@@ -8,12 +8,17 @@
 export const TILES = {
   /** Web Mercator zoom level. ~9–10 km/tile at typical latitudes. */
   zoom: 12,
-  /** Grid is `grid × grid` tiles, centred on the location. */
+  /** Default grid size (grid × grid tiles) when the location has no route. */
   grid: 16,
+  /**
+   * When the location has a route, the grid is sized to fit the route's
+   * bounding box plus this fraction of the span on each side. 0.1 = 10 %.
+   */
+  routePaddingFactor: 0.1,
   /** Pixel size of each square tile. */
   px: 256,
   /** Segments per side of the terrain plane geometry. */
-  planeSegments: 1024,
+  planeSegments: 2048,
   /** AWS Terrarium PNG-encoded elevation tiles. */
   terrainUrl: (z: number, x: number, y: number) =>
     `https://s3.amazonaws.com/elevation-tiles-prod/terrarium/${z}/${x}/${y}.png`,

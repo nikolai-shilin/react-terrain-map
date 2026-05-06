@@ -18,6 +18,7 @@ import {
 } from './config';
 import type {
   Location,
+  Route,
   SceneOptions,
   TerrainSceneApi,
   Waypoint,
@@ -53,6 +54,40 @@ interface TileGrid {
   y0: number;
   width: number;
   height: number;
+  /** Number of tiles along each side of the loaded grid. */
+  grid: number;
+}
+
+/**
+ * Compute a grid centre + size that fits the route's bounding box plus
+ * `paddingFactor` on each side. Returns the centre lat used for the
+ * meters-per-pixel calculation so it tracks the bbox centre, not loc.lat.
+ */
+function fitRouteToGrid(
+  waypoints: Waypoint[],
+  zoom: number,
+  paddingFactor: number,
+): { cx: number; cy: number; grid: number; centerLat: number } {
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
+  let latSum = 0;
+  for (const wp of waypoints) {
+    latSum += wp.lat;
+    const x = lonToTileX(wp.lon, zoom);
+    const y = latToTileY(wp.lat, zoom);
+    if (x < minX) minX = x;
+    if (x > maxX) maxX = x;
+    if (y < minY) minY = y;
+    if (y > maxY) maxY = y;
+  }
+  const cx = (minX + maxX) / 2;
+  const cy = (minY + maxY) / 2;
+  const span = Math.max(maxX - minX, maxY - minY);
+  const padded = span * (1 + 2 * paddingFactor);
+  const grid = Math.max(1, Math.ceil(padded));
+  return { cx, cy, grid, centerLat: latSum / waypoints.length };
 }
 
 async function stitchTiles(
@@ -89,7 +124,7 @@ async function stitchTiles(
     }
   }
   await Promise.all(tasks);
-  return { canvas, meta: { x0, y0, width: W, height: H } };
+  return { canvas, meta: { x0, y0, width: W, height: H, grid } };
 }
 
 // elevation = (R * 256 + G + B / 256) - 32768
@@ -178,8 +213,8 @@ function orbitFocus(loc: Location, data: LoadedData): FocusPoint | null {
   if (!loc.orbitPoint) return null;
   const tx = lonToTileX(loc.orbitPoint.lon, TILES.zoom);
   const ty = latToTileY(loc.orbitPoint.lat, TILES.zoom);
-  const u = (tx - data.meta.x0) / TILES.grid;
-  const v = (ty - data.meta.y0) / TILES.grid;
+  const u = (tx - data.meta.x0) / data.meta.grid;
+  const v = (ty - data.meta.y0) / data.meta.grid;
   if (u < 0 || u > 1 || v < 0 || v > 1) return null;
   return {
     x: (u - 0.5) * data.worldW,
@@ -489,8 +524,8 @@ function stringPull(
 function waypointToGrid(wp: Waypoint, data: LoadedData, m: SeaMask): { x: number; y: number } {
   const tx = lonToTileX(wp.lon, TILES.zoom);
   const ty = latToTileY(wp.lat, TILES.zoom);
-  const u = (tx - data.meta.x0) / TILES.grid;
-  const v = (ty - data.meta.y0) / TILES.grid;
+  const u = (tx - data.meta.x0) / data.meta.grid;
+  const v = (ty - data.meta.y0) / data.meta.grid;
   const gx = Math.max(0, Math.min(m.gw - 1, Math.round(u * (m.gw - 1))));
   const gy = Math.max(0, Math.min(m.gh - 1, Math.round(v * (m.gh - 1))));
   return { x: gx, y: gy };
@@ -537,7 +572,45 @@ function coastAwarePath(loc: Location, data: LoadedData): THREE.Vector3[] {
 
 interface RouteNodes {
   group: THREE.Group;
+  /** For altitude routes, re-applies the current vex to line + ports. */
+  applyVex?: (vex: number) => void;
   dispose: () => void;
+}
+
+interface AltPort {
+  sphere: THREE.Mesh;
+  pole: THREE.Mesh;
+  baseAlt: number;
+}
+
+function isAltitudeRoute(route: Route): boolean {
+  return route.waypoints.some((w) => typeof w.alt === 'number');
+}
+
+/**
+ * Direct waypoint-to-waypoint 3-D polyline. Y is the per-waypoint altitude
+ * in metres (defaulting to 0). Used when the route carries any altitude;
+ * sea routes still go through {@link coastAwarePath}.
+ */
+function straightAltitudePath(
+  waypoints: readonly Waypoint[],
+  data: LoadedData,
+): THREE.Vector3[] {
+  const out: THREE.Vector3[] = [];
+  for (const wp of waypoints) {
+    const tx = lonToTileX(wp.lon, TILES.zoom);
+    const ty = latToTileY(wp.lat, TILES.zoom);
+    const u = (tx - data.meta.x0) / data.meta.grid;
+    const v = (ty - data.meta.y0) / data.meta.grid;
+    out.push(
+      new THREE.Vector3(
+        (u - 0.5) * data.worldW,
+        wp.alt ?? 0,
+        (v - 0.5) * data.worldH,
+      ),
+    );
+  }
+  return out;
 }
 
 function buildRouteNodes(
@@ -547,7 +620,10 @@ function buildRouteNodes(
 ): RouteNodes | null {
   if (!loc.route || loc.route.waypoints.length < 2) return null;
 
-  const path = coastAwarePath(loc, data);
+  const altRoute = isAltitudeRoute(loc.route);
+  const path = altRoute
+    ? straightAltitudePath(loc.route.waypoints, data)
+    : coastAwarePath(loc, data);
   if (path.length < 2) return null;
 
   const positions: number[] = [];
@@ -578,12 +654,14 @@ function buildRouteNodes(
     roughness: ROUTE.port.roughness,
   });
   const portGeoms: THREE.BufferGeometry[] = [];
+  const altPorts: AltPort[] = [];
+
   for (const wp of loc.route.waypoints) {
     if (!wp.label) continue;
     const tx = lonToTileX(wp.lon, TILES.zoom);
     const ty = latToTileY(wp.lat, TILES.zoom);
-    const u = (tx - data.meta.x0) / TILES.grid;
-    const v = (ty - data.meta.y0) / TILES.grid;
+    const u = (tx - data.meta.x0) / data.meta.grid;
+    const v = (ty - data.meta.y0) / data.meta.grid;
     const px = (u - 0.5) * data.worldW;
     const pz = (v - 0.5) * data.worldH;
 
@@ -593,24 +671,70 @@ function buildRouteNodes(
       ROUTE.port.sphere.heightSeg,
     );
     const sphere = new THREE.Mesh(sphereGeom, portMat);
-    sphere.position.set(px, ROUTE.port.sphere.y, pz);
-    group.add(sphere);
     portGeoms.push(sphereGeom);
 
-    const poleGeom = new THREE.CylinderGeometry(
-      ROUTE.port.pole.radius,
-      ROUTE.port.pole.radius,
-      ROUTE.port.pole.height,
-      ROUTE.port.pole.segments,
-    );
-    const pole = new THREE.Mesh(poleGeom, portMat);
-    pole.position.set(px, ROUTE.port.pole.y, pz);
-    group.add(pole);
-    portGeoms.push(poleGeom);
+    if (altRoute) {
+      // Unit-height cylinder; scaled per-waypoint and on every vex change.
+      const poleGeom = new THREE.CylinderGeometry(
+        ROUTE.port.pole.radius,
+        ROUTE.port.pole.radius,
+        1,
+        ROUTE.port.pole.segments,
+      );
+      const pole = new THREE.Mesh(poleGeom, portMat);
+      portGeoms.push(poleGeom);
+
+      const baseAlt = wp.alt ?? 0;
+      sphere.position.set(px, baseAlt, pz);
+      pole.scale.y = Math.max(1, baseAlt);
+      pole.position.set(px, baseAlt / 2, pz);
+
+      group.add(sphere);
+      group.add(pole);
+      altPorts.push({ sphere, pole, baseAlt });
+    } else {
+      const poleGeom = new THREE.CylinderGeometry(
+        ROUTE.port.pole.radius,
+        ROUTE.port.pole.radius,
+        ROUTE.port.pole.height,
+        ROUTE.port.pole.segments,
+      );
+      const pole = new THREE.Mesh(poleGeom, portMat);
+      portGeoms.push(poleGeom);
+
+      sphere.position.set(px, ROUTE.port.sphere.y, pz);
+      pole.position.set(px, ROUTE.port.pole.y, pz);
+
+      group.add(sphere);
+      group.add(pole);
+    }
+  }
+
+  // Altitude routes need to scale the line + port heights with vex so they
+  // stay anchored to the (also-exaggerated) terrain.
+  let applyVex: ((vex: number) => void) | undefined;
+  if (altRoute) {
+    const baseY = path.map((p) => p.y);
+    applyVex = (vex: number) => {
+      const updated = new Float32Array(path.length * 3);
+      for (let i = 0; i < path.length; i++) {
+        updated[i * 3] = path[i].x;
+        updated[i * 3 + 1] = baseY[i] * vex;
+        updated[i * 3 + 2] = path[i].z;
+      }
+      lineGeom.setPositions(updated);
+      for (const port of altPorts) {
+        const y = port.baseAlt * vex;
+        port.sphere.position.y = y;
+        port.pole.scale.y = Math.max(1, y);
+        port.pole.position.y = y / 2;
+      }
+    };
   }
 
   return {
     group,
+    applyVex,
     dispose: () => {
       lineGeom.dispose();
       lineMat.dispose();
@@ -750,17 +874,43 @@ export function createTerrainScene(
     const cached = dataCache.get(loc.id);
     if (cached) return cached;
 
-    const cx = lonToTileX(loc.lon, TILES.zoom);
-    const cy = latToTileY(loc.lat, TILES.zoom);
+    // When a route is supplied, ignore loc.lat/lon and centre + size the
+    // grid on the route's bounding box (with TILES.routePaddingFactor of
+    // padding on each side). Otherwise fall back to loc.lat/lon + TILES.grid.
+    let cx: number;
+    let cy: number;
+    let grid: number;
+    let centerLat: number;
+    if (loc.route && loc.route.waypoints.length >= 2) {
+      const fit = fitRouteToGrid(
+        loc.route.waypoints,
+        TILES.zoom,
+        TILES.routePaddingFactor,
+      );
+      cx = fit.cx;
+      cy = fit.cy;
+      grid = fit.grid;
+      centerLat = fit.centerLat;
+    } else {
+      if (typeof loc.lat !== 'number' || typeof loc.lon !== 'number') {
+        throw new Error(
+          `Location "${loc.id}" needs either a route (≥ 2 waypoints) or both lat/lon`,
+        );
+      }
+      cx = lonToTileX(loc.lon, TILES.zoom);
+      cy = latToTileY(loc.lat, TILES.zoom);
+      grid = TILES.grid;
+      centerLat = loc.lat;
+    }
 
     onStatus?.(`Loading elevation tiles for ${loc.name}…`);
-    const dem = await stitchTiles(cx, cy, TILES.zoom, TILES.grid, TILES.terrainUrl, (l, t) =>
+    const dem = await stitchTiles(cx, cy, TILES.zoom, grid, TILES.terrainUrl, (l, t) =>
       onStatus?.(`Loading elevation tiles for ${loc.name}… ${l}/${t}`),
     );
     const elevation = decodeTerrarium(dem.canvas);
 
     onStatus?.(`Loading satellite imagery for ${loc.name}…`);
-    const sat = await stitchTiles(cx, cy, TILES.zoom, TILES.grid, TILES.imageryUrl, (l, t) =>
+    const sat = await stitchTiles(cx, cy, TILES.zoom, grid, TILES.imageryUrl, (l, t) =>
       onStatus?.(`Loading satellite imagery for ${loc.name}… ${l}/${t}`),
     );
 
@@ -771,7 +921,7 @@ export function createTerrainScene(
     satTexture.magFilter = THREE.LinearFilter;
     satTexture.generateMipmaps = true;
 
-    const mpp = metersPerPixel(loc.lat, TILES.zoom);
+    const mpp = metersPerPixel(centerLat, TILES.zoom);
     const data: LoadedData = {
       elevation,
       satTexture,
@@ -837,14 +987,16 @@ export function createTerrainScene(
 
   function applyVex(vex: number): void {
     currentVex = vex;
-    if (!currentNodes) return;
-    const { positions, baseElev, geometry, marker, focus } = currentNodes;
-    for (let i = 0; i < positions.count; i++) {
-      positions.setY(i, baseElev[i] * vex);
+    if (currentNodes) {
+      const { positions, baseElev, geometry, marker, focus } = currentNodes;
+      for (let i = 0; i < positions.count; i++) {
+        positions.setY(i, baseElev[i] * vex);
+      }
+      positions.needsUpdate = true;
+      geometry.computeVertexNormals();
+      marker.position.y = focus.elev * vex + MARKER.heightOffset;
     }
-    positions.needsUpdate = true;
-    geometry.computeVertexNormals();
-    marker.position.y = focus.elev * vex + MARKER.heightOffset;
+    currentRoute?.applyVex?.(vex);
   }
 
   function dispose(): void {

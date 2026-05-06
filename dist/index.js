@@ -1,109 +1,226 @@
-var ut = Object.defineProperty;
-var ht = (e, t, n) => t in e ? ut(e, t, { enumerable: !0, configurable: !0, writable: !0, value: n }) : e[t] = n;
-var K = (e, t, n) => ht(e, typeof t != "symbol" ? t + "" : t, n);
-import { jsxs as _, jsx as A, Fragment as mt } from "react/jsx-runtime";
-import { useRef as Y, useState as z, useEffect as Z, useCallback as ft } from "react";
+var wt = Object.defineProperty;
+var xt = (n, t, e) => t in n ? wt(n, t, { enumerable: !0, configurable: !0, writable: !0, value: e }) : n[t] = e;
+var st = (n, t, e) => xt(n, typeof t != "symbol" ? t + "" : t, e);
+import { jsxs as W, jsx as L, Fragment as vt } from "react/jsx-runtime";
+import { useRef as rt, useState as q, useEffect as at, useCallback as Mt } from "react";
 import * as w from "three";
-import { MapControls as pt } from "three/addons/controls/MapControls.js";
-import { Line2 as dt } from "three/addons/lines/Line2.js";
-import { LineGeometry as gt } from "three/addons/lines/LineGeometry.js";
-import { LineMaterial as wt } from "three/addons/lines/LineMaterial.js";
-const L = 12, F = 16, G = 256, J = 1024, yt = (e, t, n) => `https://s3.amazonaws.com/elevation-tiles-prod/terrarium/${e}/${t}/${n}.png`, xt = (e, t, n) => `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${e}/${n}/${t}`;
-function H(e, t) {
-  return (e + 180) / 360 * 2 ** t;
+import { MapControls as bt } from "three/addons/controls/MapControls.js";
+import { Line2 as St } from "three/addons/lines/Line2.js";
+import { LineGeometry as kt } from "three/addons/lines/LineGeometry.js";
+import { LineMaterial as At } from "three/addons/lines/LineMaterial.js";
+const S = {
+  /** Web Mercator zoom level. ~9–10 km/tile at typical latitudes. */
+  zoom: 12,
+  /** Default grid size (grid × grid tiles) when the location has no route. */
+  grid: 16,
+  /**
+   * When the location has a route, the grid is sized to fit the route's
+   * bounding box plus this fraction of the span on each side. 0.1 = 10 %.
+   */
+  routePaddingFactor: 0.1,
+  /** Pixel size of each square tile. */
+  px: 256,
+  /** Segments per side of the terrain plane geometry. */
+  planeSegments: 2048,
+  /** AWS Terrarium PNG-encoded elevation tiles. */
+  terrainUrl: (n, t, e) => `https://s3.amazonaws.com/elevation-tiles-prod/terrarium/${n}/${t}/${e}.png`,
+  /** ESRI World Imagery — y/x swap is intentional for the ArcGIS path style. */
+  imageryUrl: (n, t, e) => `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${n}/${e}/${t}`
+}, ct = {
+  maxPixelRatio: 2,
+  backgroundColor: 0
+}, Y = {
+  fov: 55,
+  near: 10,
+  far: 4e5,
+  /** Initial radial distance = `initialDistFactor × worldW`. */
+  initialDistFactor: 0.55,
+  /** Initial polar angle from straight-up, in degrees. */
+  initialPolarDeg: 5
+}, K = {
+  dampingFactor: 0.08,
+  /** Just below π/2 so the camera never goes below the horizon. */
+  maxPolarAngle: Math.PI * 0.498,
+  minDistance: 800,
+  /** Max distance = `maxDistFactor × worldW`. */
+  maxDistFactor: 1.6
+}, Z = {
+  /** Horizontal rotation rate (rad/sec) for ← / →. */
+  rotRate: 1.1,
+  /** Vertical tilt rate (rad/sec) for ↑ / ↓. */
+  tiltRate: 0.9,
+  /** Minimum polar angle so the camera never tilts past straight-up. */
+  minPhi: 0.05
+}, N = {
+  sun: {
+    color: 16774374,
+    intensity: 2.6,
+    position: [4e4, 14e3, -25e3]
+  },
+  hemi: {
+    sky: 12114175,
+    ground: 4930086,
+    intensity: 0.55
+  },
+  ambient: {
+    color: 16777215,
+    intensity: 0.15
+  }
+}, J = {
+  color: 0,
+  /** Fog spans nearFactor × worldW to farFactor × worldW. */
+  nearFactor: 0.7,
+  farFactor: 2.4
+}, lt = {
+  roughness: 0.95,
+  metalness: 0
+}, H = {
+  cone: { radius: 80, height: 320, segments: 16 },
+  /** Marker hovers this many world-units above the focus elevation. */
+  heightOffset: 200,
+  roughness: 0.4,
+  summit: { color: 16724804, emissive: 6689041 },
+  orbit: { color: 16756768, emissive: 5583616 }
+}, k = {
+  line: {
+    color: 57599,
+    width: 3,
+    opacity: 0.95
+  },
+  port: {
+    color: 57599,
+    emissive: 16480,
+    emissiveIntensity: 1.2,
+    roughness: 0.3,
+    sphere: { radius: 180, widthSeg: 18, heightSeg: 14, y: 200 },
+    pole: { radius: 20, height: 240, segments: 8, y: 120 }
+  },
+  /** Height of the route line above sea level. */
+  seaOffset: 80
+}, ut = {
+  /** Downscale factor when building the sea-mask grid. */
+  maskDownscale: 8,
+  /** Max BFS radius (in mask cells) when snapping a waypoint onto sea. */
+  snapMaxRadius: 80
+}, j = {
+  default: 1,
+  min: 1,
+  max: 4,
+  step: 0.1
+}, tt = {
+  mouseHint: "drag to pan · right-drag to rotate · scroll to zoom",
+  keyHint: "← → rotate · ↑ ↓ tilt",
+  attribution: "elevation: AWS Terrain Tiles · imagery: ESRI World Imagery"
+};
+function _(n, t) {
+  return (n + 180) / 360 * 2 ** t;
 }
-function O(e, t) {
-  const n = e * Math.PI / 180;
-  return (1 - Math.asinh(Math.tan(n)) / Math.PI) / 2 * 2 ** t;
+function V(n, t) {
+  const e = n * Math.PI / 180;
+  return (1 - Math.asinh(Math.tan(e)) / Math.PI) / 2 * 2 ** t;
 }
-function vt(e, t) {
-  return 156543.03392 * Math.cos(e * Math.PI / 180) / 2 ** t;
+function Rt(n, t) {
+  return 156543.03392 * Math.cos(n * Math.PI / 180) / 2 ** t;
 }
-function Mt(e) {
-  return new Promise((t, n) => {
-    const o = new Image();
-    o.crossOrigin = "anonymous", o.onload = () => t(o), o.onerror = () => n(new Error(`Failed to load ${e}`)), o.src = e;
+function Tt(n) {
+  return new Promise((t, e) => {
+    const i = new Image();
+    i.crossOrigin = "anonymous", i.onload = () => t(i), i.onerror = () => e(new Error(`Failed to load ${n}`)), i.src = n;
   });
 }
-async function tt(e, t, n, o, a, r) {
-  const s = Math.floor(e - o / 2), i = Math.floor(t - o / 2), c = G * o, u = G * o, f = document.createElement("canvas");
-  f.width = c, f.height = u;
-  const h = f.getContext("2d", { willReadFrequently: !0 }), p = o * o;
+function Ft(n, t, e) {
+  let i = 1 / 0, r = -1 / 0, a = 1 / 0, o = -1 / 0, s = 0;
+  for (const l of n) {
+    s += l.lat;
+    const c = _(l.lon, t), v = V(l.lat, t);
+    c < i && (i = c), c > r && (r = c), v < a && (a = v), v > o && (o = v);
+  }
+  const h = (i + r) / 2, u = (a + o) / 2, m = Math.max(r - i, o - a) * (1 + 2 * e), g = Math.max(1, Math.ceil(m));
+  return { cx: h, cy: u, grid: g, centerLat: s / n.length };
+}
+async function ht(n, t, e, i, r, a) {
+  const o = Math.floor(n - i / 2), s = Math.floor(t - i / 2), h = S.px * i, u = S.px * i, d = document.createElement("canvas");
+  d.width = h, d.height = u;
+  const m = d.getContext("2d", { willReadFrequently: !0 }), g = i * i;
   let l = 0;
-  const m = [];
-  for (let b = 0; b < o; b++)
-    for (let x = 0; x < o; x++) {
-      const v = a(n, s + x, i + b);
-      m.push(
-        Mt(v).then((d) => {
-          h.drawImage(d, x * G, b * G), l++, r == null || r(l, p);
+  const c = [];
+  for (let v = 0; v < i; v++)
+    for (let x = 0; x < i; x++) {
+      const p = r(e, o + x, s + v);
+      c.push(
+        Tt(p).then((y) => {
+          m.drawImage(y, x * S.px, v * S.px), l++, a == null || a(l, g);
         })
       );
     }
-  return await Promise.all(m), { canvas: f, meta: { x0: s, y0: i, width: c, height: u } };
+  return await Promise.all(c), { canvas: d, meta: { x0: o, y0: s, width: h, height: u, grid: i } };
 }
-function bt(e) {
-  const t = e.getContext("2d"), { width: n, height: o } = e, a = t.getImageData(0, 0, n, o).data, r = new Float32Array(n * o);
-  for (let s = 0, i = 0; s < r.length; s++, i += 4)
-    r[s] = a[i] * 256 + a[i + 1] + a[i + 2] / 256 - 32768;
-  return r;
+function It(n) {
+  const t = n.getContext("2d"), { width: e, height: i } = n, r = t.getImageData(0, 0, e, i).data, a = new Float32Array(e * i);
+  for (let o = 0, s = 0; o < a.length; o++, s += 4)
+    a[o] = r[s] * 256 + r[s + 1] + r[s + 2] / 256 - 32768;
+  return a;
 }
-function nt(e, t, n) {
-  const o = e.meta.width, a = e.meta.height, r = Math.max(0, Math.min(o - 1.0001, t * (o - 1))), s = Math.max(0, Math.min(a - 1.0001, n * (a - 1))), i = Math.floor(r), c = Math.floor(s), u = r - i, f = s - c, h = c * o + i, p = e.elevation[h], l = e.elevation[h + 1], m = e.elevation[h + o], b = e.elevation[h + o + 1];
-  return p * (1 - u) * (1 - f) + l * u * (1 - f) + m * (1 - u) * f + b * u * f;
+function pt(n, t, e) {
+  const i = n.meta.width, r = n.meta.height, a = Math.max(0, Math.min(i - 1.0001, t * (i - 1))), o = Math.max(0, Math.min(r - 1.0001, e * (r - 1))), s = Math.floor(a), h = Math.floor(o), u = a - s, d = o - h, m = h * i + s, g = n.elevation[m], l = n.elevation[m + 1], c = n.elevation[m + i], v = n.elevation[m + i + 1];
+  return g * (1 - u) * (1 - d) + l * u * (1 - d) + c * (1 - u) * d + v * u * d;
 }
-function Tt(e) {
-  const { elevation: t, meta: n, worldW: o, worldH: a } = e, r = n.width;
-  let s = -1 / 0, i = 0;
-  for (let f = 0; f < t.length; f++)
-    t[f] > s && (s = t[f], i = f);
-  const c = i % r, u = Math.floor(i / r);
+function Lt(n) {
+  const { elevation: t, meta: e, worldW: i, worldH: r } = n, a = e.width;
+  let o = -1 / 0, s = 0;
+  for (let d = 0; d < t.length; d++)
+    t[d] > o && (o = t[d], s = d);
+  const h = s % a, u = Math.floor(s / a);
   return {
-    x: (c / r - 0.5) * o,
-    z: (u / n.height - 0.5) * a,
-    elev: s,
+    x: (h / a - 0.5) * i,
+    z: (u / e.height - 0.5) * r,
+    elev: o,
     kind: "summit"
   };
 }
-function kt(e, t) {
-  if (!e.orbitPoint) return null;
-  const n = H(e.orbitPoint.lon, L), o = O(e.orbitPoint.lat, L), a = (n - t.meta.x0) / F, r = (o - t.meta.y0) / F;
-  return a < 0 || a > 1 || r < 0 || r > 1 ? null : {
-    x: (a - 0.5) * t.worldW,
-    z: (r - 0.5) * t.worldH,
-    elev: nt(t, a, r),
+function Et(n, t) {
+  if (!n.orbitPoint) return null;
+  const e = _(n.orbitPoint.lon, S.zoom), i = V(n.orbitPoint.lat, S.zoom), r = (e - t.meta.x0) / t.meta.grid, a = (i - t.meta.y0) / t.meta.grid;
+  return r < 0 || r > 1 || a < 0 || a > 1 ? null : {
+    x: (r - 0.5) * t.worldW,
+    z: (a - 0.5) * t.worldH,
+    elev: pt(t, r, a),
     kind: "orbit"
   };
 }
-function St(e) {
-  const t = e.kind === "orbit" ? 16756768 : 16724804, n = e.kind === "orbit" ? 5583616 : 6689041, o = new w.Mesh(
-    new w.ConeGeometry(80, 320, 16),
-    new w.MeshStandardMaterial({ color: t, emissive: n, roughness: 0.4 })
+function Pt(n) {
+  const t = n.kind === "orbit" ? H.orbit : H.summit, e = new w.Mesh(
+    new w.ConeGeometry(H.cone.radius, H.cone.height, H.cone.segments),
+    new w.MeshStandardMaterial({
+      color: t.color,
+      emissive: t.emissive,
+      roughness: H.roughness
+    })
   );
-  return o.position.set(e.x, e.elev + 200, e.z), o;
+  return e.position.set(n.x, n.elev + H.heightOffset, n.z), e;
 }
-function At(e, t) {
-  const { satTexture: n, worldW: o, worldH: a } = e, r = new w.PlaneGeometry(o, a, J, J);
-  r.rotateX(-Math.PI / 2);
-  const s = r.attributes.position, i = new Float32Array(s.count);
-  for (let h = 0; h < s.count; h++) {
-    const p = s.getX(h), l = s.getZ(h), m = nt(e, p / o + 0.5, l / a + 0.5);
-    i[h] = m, s.setY(h, m);
+function zt(n, t) {
+  const { satTexture: e, worldW: i, worldH: r } = n, a = new w.PlaneGeometry(i, r, S.planeSegments, S.planeSegments);
+  a.rotateX(-Math.PI / 2);
+  const o = a.attributes.position, s = new Float32Array(o.count);
+  for (let m = 0; m < o.count; m++) {
+    const g = o.getX(m), l = o.getZ(m), c = pt(n, g / i + 0.5, l / r + 0.5);
+    s[m] = c, o.setY(m, c);
   }
-  s.needsUpdate = !0, r.computeVertexNormals();
-  const c = new w.MeshStandardMaterial({
-    map: n,
-    roughness: 0.95,
-    metalness: 0
-  }), u = new w.Mesh(r, c), f = St(t);
-  return { mesh: u, marker: f, geometry: r, material: c, positions: s, baseElev: i, focus: t };
+  o.needsUpdate = !0, a.computeVertexNormals();
+  const h = new w.MeshStandardMaterial({
+    map: e,
+    roughness: lt.roughness,
+    metalness: lt.metalness
+  }), u = new w.Mesh(a, h), d = Pt(t);
+  return { mesh: u, marker: d, geometry: a, material: h, positions: o, baseElev: s, focus: t };
 }
-function et(e, t) {
-  e.remove(t.mesh), e.remove(t.marker), t.geometry.dispose(), t.material.dispose(), t.marker.geometry.dispose(), t.marker.material.dispose();
+function mt(n, t) {
+  n.remove(t.mesh), n.remove(t.marker), t.geometry.dispose(), t.material.dispose(), t.marker.geometry.dispose(), t.marker.material.dispose();
 }
-class It {
+class Ct {
   constructor(t) {
-    K(this, "items", []);
+    st(this, "items", []);
     this.cmp = t;
   }
   get size() {
@@ -111,86 +228,86 @@ class It {
   }
   push(t) {
     this.items.push(t);
-    let n = this.items.length - 1;
-    for (; n > 0; ) {
-      const o = n - 1 >> 1;
-      if (this.cmp(this.items[n], this.items[o]) >= 0) break;
-      [this.items[n], this.items[o]] = [this.items[o], this.items[n]], n = o;
+    let e = this.items.length - 1;
+    for (; e > 0; ) {
+      const i = e - 1 >> 1;
+      if (this.cmp(this.items[e], this.items[i]) >= 0) break;
+      [this.items[e], this.items[i]] = [this.items[i], this.items[e]], e = i;
     }
   }
   pop() {
     if (this.items.length === 0) return;
-    const t = this.items[0], n = this.items.pop();
+    const t = this.items[0], e = this.items.pop();
     if (this.items.length > 0) {
-      this.items[0] = n;
-      let o = 0;
-      const a = this.items.length;
+      this.items[0] = e;
+      let i = 0;
+      const r = this.items.length;
       for (; ; ) {
-        const r = 2 * o + 1, s = 2 * o + 2;
-        let i = o;
-        if (r < a && this.cmp(this.items[r], this.items[i]) < 0 && (i = r), s < a && this.cmp(this.items[s], this.items[i]) < 0 && (i = s), i === o) break;
-        [this.items[o], this.items[i]] = [this.items[i], this.items[o]], o = i;
+        const a = 2 * i + 1, o = 2 * i + 2;
+        let s = i;
+        if (a < r && this.cmp(this.items[a], this.items[s]) < 0 && (s = a), o < r && this.cmp(this.items[o], this.items[s]) < 0 && (s = o), s === i) break;
+        [this.items[i], this.items[s]] = [this.items[s], this.items[i]], i = s;
       }
     }
     return t;
   }
 }
-function Lt(e, t) {
-  const n = e.meta.width, o = e.meta.height, a = Math.floor(n / t), r = Math.floor(o / t), s = new Uint8Array(a * r), i = t * t;
-  for (let l = 0; l < r; l++)
-    for (let m = 0; m < a; m++) {
-      let b = 0;
+function Dt(n, t) {
+  const e = n.meta.width, i = n.meta.height, r = Math.floor(e / t), a = Math.floor(i / t), o = new Uint8Array(r * a), s = t * t;
+  for (let l = 0; l < a; l++)
+    for (let c = 0; c < r; c++) {
+      let v = 0;
       for (let x = 0; x < t; x++)
-        for (let v = 0; v < t; v++) {
-          const d = m * t + v, M = l * t + x;
-          e.elevation[M * n + d] > 0 && b++;
+        for (let p = 0; p < t; p++) {
+          const y = c * t + p, b = l * t + x;
+          n.elevation[b * e + y] > 0 && v++;
         }
-      s[l * a + m] = b * 2 < i ? 1 : 0;
+      o[l * r + c] = v * 2 < s ? 1 : 0;
     }
-  const c = new Int32Array(a * r);
-  let u = 0, f = 0, h = 0;
-  const p = [];
-  for (let l = 0; l < s.length; l++) {
-    if (!s[l] || c[l] !== 0) continue;
-    h++, p.length = 0, p.push(l), c[l] = h;
-    let m = 0, b = 0;
-    for (; b < p.length; ) {
-      const x = p[b++];
-      m++;
-      const v = x % a, d = x / a | 0;
-      for (const [M, T] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-        const k = v + M, E = d + T;
-        if (k < 0 || k >= a || E < 0 || E >= r) continue;
-        const C = E * a + k;
-        !s[C] || c[C] !== 0 || (c[C] = h, p.push(C));
+  const h = new Int32Array(r * a);
+  let u = 0, d = 0, m = 0;
+  const g = [];
+  for (let l = 0; l < o.length; l++) {
+    if (!o[l] || h[l] !== 0) continue;
+    m++, g.length = 0, g.push(l), h[l] = m;
+    let c = 0, v = 0;
+    for (; v < g.length; ) {
+      const x = g[v++];
+      c++;
+      const p = x % r, y = x / r | 0;
+      for (const [b, A] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const T = p + b, F = y + A;
+        if (T < 0 || T >= r || F < 0 || F >= a) continue;
+        const I = F * r + T;
+        !o[I] || h[I] !== 0 || (h[I] = m, g.push(I));
       }
     }
-    m > f && (f = m, u = h);
+    c > d && (d = c, u = m);
   }
-  for (let l = 0; l < s.length; l++)
-    s[l] = c[l] === u ? 1 : 0;
-  return { mask: s, gw: a, gh: r, downscale: t };
+  for (let l = 0; l < o.length; l++)
+    o[l] = h[l] === u ? 1 : 0;
+  return { mask: o, gw: r, gh: a, downscale: t };
 }
-function Et(e, t, n, o = 60) {
-  if (n.mask[t * n.gw + e]) return { x: e, y: t };
-  const a = new Uint8Array(n.gw * n.gh), r = [t * n.gw + e];
-  a[t * n.gw + e] = 1;
-  let s = 0;
-  for (; s < r.length; ) {
-    const i = r[s++], c = i % n.gw, u = i / n.gw | 0;
-    if (!(Math.abs(c - e) + Math.abs(u - t) > o)) {
-      if (n.mask[i]) return { x: c, y: u };
-      for (const [f, h] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-        const p = c + f, l = u + h;
-        if (p < 0 || p >= n.gw || l < 0 || l >= n.gh) continue;
-        const m = l * n.gw + p;
-        a[m] || (a[m] = 1, r.push(m));
+function Nt(n, t, e, i = 60) {
+  if (e.mask[t * e.gw + n]) return { x: n, y: t };
+  const r = new Uint8Array(e.gw * e.gh), a = [t * e.gw + n];
+  r[t * e.gw + n] = 1;
+  let o = 0;
+  for (; o < a.length; ) {
+    const s = a[o++], h = s % e.gw, u = s / e.gw | 0;
+    if (!(Math.abs(h - n) + Math.abs(u - t) > i)) {
+      if (e.mask[s]) return { x: h, y: u };
+      for (const [d, m] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const g = h + d, l = u + m;
+        if (g < 0 || g >= e.gw || l < 0 || l >= e.gh) continue;
+        const c = l * e.gw + g;
+        r[c] || (r[c] = 1, a.push(c));
       }
     }
   }
   return null;
 }
-const Rt = [
+const Ht = [
   [1, 0, 1],
   [-1, 0, 1],
   [0, 1, 1],
@@ -200,347 +317,421 @@ const Rt = [
   [1, -1, Math.SQRT2],
   [-1, -1, Math.SQRT2]
 ];
-function Ft(e, t, n, o, a) {
-  const { mask: r, gw: s, gh: i } = e, c = n * s + t, u = a * s + o;
-  if (!r[c] || !r[u]) return null;
-  const f = new Int32Array(s * i).fill(-1), h = new Float32Array(s * i);
-  h.fill(1 / 0), h[c] = 0;
-  const p = new It((l, m) => l.f - m.f);
-  for (p.push({ x: t, y: n, f: Math.hypot(o - t, a - n) }); p.size > 0; ) {
-    const l = p.pop(), m = l.y * s + l.x;
-    if (l.x === o && l.y === a) {
+function Gt(n, t, e, i, r) {
+  const { mask: a, gw: o, gh: s } = n, h = e * o + t, u = r * o + i;
+  if (!a[h] || !a[u]) return null;
+  const d = new Int32Array(o * s).fill(-1), m = new Float32Array(o * s);
+  m.fill(1 / 0), m[h] = 0;
+  const g = new Ct((l, c) => l.f - c.f);
+  for (g.push({ x: t, y: e, f: Math.hypot(i - t, r - e) }); g.size > 0; ) {
+    const l = g.pop(), c = l.y * o + l.x;
+    if (l.x === i && l.y === r) {
       const x = [];
-      let v = m;
-      for (; v >= 0; )
-        x.push([v % s, v / s | 0]), v = f[v];
+      let p = c;
+      for (; p >= 0; )
+        x.push([p % o, p / o | 0]), p = d[p];
       return x.reverse();
     }
-    const b = h[m];
-    if (!(l.f > b + Math.hypot(o - l.x, a - l.y) + 1e-6))
-      for (const [x, v, d] of Rt) {
-        const M = l.x + x, T = l.y + v;
-        if (M < 0 || M >= s || T < 0 || T >= i) continue;
-        const k = T * s + M;
-        if (!r[k] || x !== 0 && v !== 0 && (!r[l.y * s + M] || !r[T * s + l.x]))
+    const v = m[c];
+    if (!(l.f > v + Math.hypot(i - l.x, r - l.y) + 1e-6))
+      for (const [x, p, y] of Ht) {
+        const b = l.x + x, A = l.y + p;
+        if (b < 0 || b >= o || A < 0 || A >= s) continue;
+        const T = A * o + b;
+        if (!a[T] || x !== 0 && p !== 0 && (!a[l.y * o + b] || !a[A * o + l.x]))
           continue;
-        const E = b + d;
-        E < h[k] && (h[k] = E, f[k] = m, p.push({ x: M, y: T, f: E + Math.hypot(o - M, a - T) }));
+        const F = v + y;
+        F < m[T] && (m[T] = F, d[T] = c, g.push({ x: b, y: A, f: F + Math.hypot(i - b, r - A) }));
       }
   }
   return null;
 }
-function Ct(e, t, n, o, a) {
-  let r = t, s = n;
-  const i = Math.abs(o - t), c = Math.abs(a - n), u = t < o ? 1 : -1, f = n < a ? 1 : -1;
-  let h = i - c;
+function Ot(n, t, e, i, r) {
+  let a = t, o = e;
+  const s = Math.abs(i - t), h = Math.abs(r - e), u = t < i ? 1 : -1, d = e < r ? 1 : -1;
+  let m = s - h;
   for (; ; ) {
-    if (!e.mask[s * e.gw + r]) return !1;
-    if (r === o && s === a) return !0;
-    const p = h * 2;
-    p > -c && (h -= c, r += u), p < i && (h += i, s += f);
+    if (!n.mask[o * n.gw + a]) return !1;
+    if (a === i && o === r) return !0;
+    const g = m * 2;
+    g > -h && (m -= h, a += u), g < s && (m += s, o += d);
   }
 }
-function Pt(e, t) {
+function $t(n, t) {
   if (t.length < 3) return t;
-  const n = [t[0]];
-  let o = 0;
-  for (let a = 2; a < t.length; a++) {
-    const [r, s] = t[o], [i, c] = t[a];
-    Ct(e, r, s, i, c) || (n.push(t[a - 1]), o = a - 1);
+  const e = [t[0]];
+  let i = 0;
+  for (let r = 2; r < t.length; r++) {
+    const [a, o] = t[i], [s, h] = t[r];
+    Ot(n, a, o, s, h) || (e.push(t[r - 1]), i = r - 1);
   }
-  return n.push(t[t.length - 1]), n;
+  return e.push(t[t.length - 1]), e;
 }
-function Nt(e, t, n) {
-  const o = H(e.lon, L), a = O(e.lat, L), r = (o - t.meta.x0) / F, s = (a - t.meta.y0) / F, i = Math.max(0, Math.min(n.gw - 1, Math.round(r * (n.gw - 1)))), c = Math.max(0, Math.min(n.gh - 1, Math.round(s * (n.gh - 1))));
-  return { x: i, y: c };
+function Wt(n, t, e) {
+  const i = _(n.lon, S.zoom), r = V(n.lat, S.zoom), a = (i - t.meta.x0) / t.meta.grid, o = (r - t.meta.y0) / t.meta.grid, s = Math.max(0, Math.min(e.gw - 1, Math.round(a * (e.gw - 1)))), h = Math.max(0, Math.min(e.gh - 1, Math.round(o * (e.gh - 1))));
+  return { x: s, y: h };
 }
-function _t(e, t) {
-  if (!e.route || e.route.waypoints.length < 2) return [];
-  const n = 80, o = Lt(t, 8), a = [];
-  for (const i of e.route.waypoints) {
-    const c = Nt(i, t, o);
-    a.push(Et(c.x, c.y, o, 80) ?? c);
+function _t(n, t) {
+  if (!n.route || n.route.waypoints.length < 2) return [];
+  const e = Dt(t, ut.maskDownscale), i = [];
+  for (const o of n.route.waypoints) {
+    const s = Wt(o, t, e);
+    i.push(Nt(s.x, s.y, e, ut.snapMaxRadius) ?? s);
   }
   const r = [];
-  for (let i = 0; i < a.length - 1; i++) {
-    const c = a[i], u = a[i + 1], f = Ft(o, c.x, c.y, u.x, u.y);
-    if (!f) {
-      console.warn(`[route] no sea path between hint ${i} and ${i + 1}`), i === 0 && r.push([c.x, c.y]), r.push([u.x, u.y]);
+  for (let o = 0; o < i.length - 1; o++) {
+    const s = i[o], h = i[o + 1], u = Gt(e, s.x, s.y, h.x, h.y);
+    if (!u) {
+      console.warn(`[route] no sea path between hint ${o} and ${o + 1}`), o === 0 && r.push([s.x, s.y]), r.push([h.x, h.y]);
       continue;
     }
-    i === 0 ? r.push(...f) : r.push(...f.slice(1));
+    o === 0 ? r.push(...u) : r.push(...u.slice(1));
   }
-  return Pt(o, r).map(([i, c]) => {
-    const u = i / (o.gw - 1), f = c / (o.gh - 1);
+  return $t(e, r).map(([o, s]) => {
+    const h = o / (e.gw - 1), u = s / (e.gh - 1);
     return new w.Vector3(
-      (u - 0.5) * t.worldW,
-      n,
-      (f - 0.5) * t.worldH
+      (h - 0.5) * t.worldW,
+      k.seaOffset,
+      (u - 0.5) * t.worldH
     );
   });
 }
-function $t(e, t, n) {
-  if (!e.route || e.route.waypoints.length < 2) return null;
-  const o = _t(e, t);
-  if (o.length < 2) return null;
+function Vt(n) {
+  return n.waypoints.some((t) => typeof t.alt == "number");
+}
+function Ut(n, t) {
+  const e = [];
+  for (const i of n) {
+    const r = _(i.lon, S.zoom), a = V(i.lat, S.zoom), o = (r - t.meta.x0) / t.meta.grid, s = (a - t.meta.y0) / t.meta.grid;
+    e.push(
+      new w.Vector3(
+        (o - 0.5) * t.worldW,
+        i.alt ?? 0,
+        (s - 0.5) * t.worldH
+      )
+    );
+  }
+  return e;
+}
+function Yt(n, t, e) {
+  if (!n.route || n.route.waypoints.length < 2) return null;
+  const i = Vt(n.route), r = i ? Ut(n.route.waypoints, t) : _t(n, t);
+  if (r.length < 2) return null;
   const a = [];
-  for (const h of o) a.push(h.x, h.y, h.z);
-  const r = new gt();
-  r.setPositions(a);
-  const s = new wt({
-    color: 57599,
-    linewidth: 3,
+  for (const c of r) a.push(c.x, c.y, c.z);
+  const o = new kt();
+  o.setPositions(a);
+  const s = new At({
+    color: k.line.color,
+    linewidth: k.line.width,
     transparent: !0,
-    opacity: 0.95,
+    opacity: k.line.opacity,
     depthTest: !0
   });
-  s.resolution.copy(n);
-  const i = new dt(r, s);
-  i.computeLineDistances();
-  const c = new w.Group();
-  c.add(i);
-  const u = new w.MeshStandardMaterial({
-    color: 57599,
-    emissive: 16480,
-    emissiveIntensity: 1.2,
-    roughness: 0.3
-  }), f = [];
-  for (const h of e.route.waypoints) {
-    if (!h.label) continue;
-    const p = H(h.lon, L), l = O(h.lat, L), m = (p - t.meta.x0) / F, b = (l - t.meta.y0) / F, x = (m - 0.5) * t.worldW, v = (b - 0.5) * t.worldH, d = new w.SphereGeometry(180, 18, 14), M = new w.Mesh(d, u);
-    M.position.set(x, 200, v), c.add(M), f.push(d);
-    const T = new w.CylinderGeometry(20, 20, 240, 8), k = new w.Mesh(T, u);
-    k.position.set(x, 120, v), c.add(k), f.push(T);
+  s.resolution.copy(e);
+  const h = new St(o, s);
+  h.computeLineDistances();
+  const u = new w.Group();
+  u.add(h);
+  const d = new w.MeshStandardMaterial({
+    color: k.port.color,
+    emissive: k.port.emissive,
+    emissiveIntensity: k.port.emissiveIntensity,
+    roughness: k.port.roughness
+  }), m = [], g = [];
+  for (const c of n.route.waypoints) {
+    if (!c.label) continue;
+    const v = _(c.lon, S.zoom), x = V(c.lat, S.zoom), p = (v - t.meta.x0) / t.meta.grid, y = (x - t.meta.y0) / t.meta.grid, b = (p - 0.5) * t.worldW, A = (y - 0.5) * t.worldH, T = new w.SphereGeometry(
+      k.port.sphere.radius,
+      k.port.sphere.widthSeg,
+      k.port.sphere.heightSeg
+    ), F = new w.Mesh(T, d);
+    if (m.push(T), i) {
+      const I = new w.CylinderGeometry(
+        k.port.pole.radius,
+        k.port.pole.radius,
+        1,
+        k.port.pole.segments
+      ), C = new w.Mesh(I, d);
+      m.push(I);
+      const P = c.alt ?? 0;
+      F.position.set(b, P, A), C.scale.y = Math.max(1, P), C.position.set(b, P / 2, A), u.add(F), u.add(C), g.push({ sphere: F, pole: C, baseAlt: P });
+    } else {
+      const I = new w.CylinderGeometry(
+        k.port.pole.radius,
+        k.port.pole.radius,
+        k.port.pole.height,
+        k.port.pole.segments
+      ), C = new w.Mesh(I, d);
+      m.push(I), F.position.set(b, k.port.sphere.y, A), C.position.set(b, k.port.pole.y, A), u.add(F), u.add(C);
+    }
+  }
+  let l;
+  if (i) {
+    const c = r.map((v) => v.y);
+    l = (v) => {
+      const x = new Float32Array(r.length * 3);
+      for (let p = 0; p < r.length; p++)
+        x[p * 3] = r[p].x, x[p * 3 + 1] = c[p] * v, x[p * 3 + 2] = r[p].z;
+      o.setPositions(x);
+      for (const p of g) {
+        const y = p.baseAlt * v;
+        p.sphere.position.y = y, p.pole.scale.y = Math.max(1, y), p.pole.position.y = y / 2;
+      }
+    };
   }
   return {
-    group: c,
+    group: u,
+    applyVex: l,
     dispose: () => {
-      r.dispose(), s.dispose(), u.dispose();
-      for (const h of f) h.dispose();
+      o.dispose(), s.dispose(), d.dispose();
+      for (const c of m) c.dispose();
     }
   };
 }
-function Wt(e, t = {}) {
-  const { onStatus: n } = t, o = new w.WebGLRenderer({ antialias: !0 });
-  o.setPixelRatio(Math.min(window.devicePixelRatio, 2)), o.outputColorSpace = w.SRGBColorSpace;
-  const a = Math.max(1, e.clientWidth), r = Math.max(1, e.clientHeight);
-  o.setSize(a, r, !1);
-  const s = o.domElement;
-  s.style.display = "block", s.style.width = "100%", s.style.height = "100%", e.appendChild(s);
-  const i = new w.Scene();
-  i.background = new w.Color(0);
-  const c = new w.PerspectiveCamera(55, a / r, 10, 4e5), u = new pt(c, s);
-  u.enableDamping = !0, u.dampingFactor = 0.08, u.maxPolarAngle = Math.PI * 0.498, u.screenSpacePanning = !1;
-  const f = new w.DirectionalLight(16774374, 2.6);
-  f.position.set(4e4, 14e3, -25e3), i.add(f), i.add(new w.HemisphereLight(12114175, 4930086, 0.55)), i.add(new w.AmbientLight(16777215, 0.15));
-  const h = new w.Vector2(a, r), p = /* @__PURE__ */ new Map();
-  let l = null, m = null, b = 1, x = !1, v = !1;
-  const d = new ResizeObserver(() => {
-    if (v) return;
-    const g = Math.max(1, e.clientWidth), y = Math.max(1, e.clientHeight);
-    c.aspect = g / y, c.updateProjectionMatrix(), o.setSize(g, y, !1), h.set(g, y), m && m.group.children[0].material.resolution.copy(h);
+function Xt(n, t = {}) {
+  const { onStatus: e } = t, i = new w.WebGLRenderer({ antialias: !0 });
+  i.setPixelRatio(Math.min(window.devicePixelRatio, ct.maxPixelRatio)), i.outputColorSpace = w.SRGBColorSpace;
+  const r = Math.max(1, n.clientWidth), a = Math.max(1, n.clientHeight);
+  i.setSize(r, a, !1);
+  const o = i.domElement;
+  o.style.display = "block", o.style.width = "100%", o.style.height = "100%", n.appendChild(o);
+  const s = new w.Scene();
+  s.background = new w.Color(ct.backgroundColor);
+  const h = new w.PerspectiveCamera(
+    Y.fov,
+    r / a,
+    Y.near,
+    Y.far
+  ), u = new bt(h, o);
+  u.enableDamping = !0, u.dampingFactor = K.dampingFactor, u.maxPolarAngle = K.maxPolarAngle, u.screenSpacePanning = !1;
+  const d = new w.DirectionalLight(N.sun.color, N.sun.intensity);
+  d.position.set(...N.sun.position), s.add(d), s.add(new w.HemisphereLight(N.hemi.sky, N.hemi.ground, N.hemi.intensity)), s.add(new w.AmbientLight(N.ambient.color, N.ambient.intensity));
+  const m = new w.Vector2(r, a), g = /* @__PURE__ */ new Map();
+  let l = null, c = null, v = 1, x = !1, p = !1;
+  const y = new ResizeObserver(() => {
+    if (p) return;
+    const f = Math.max(1, n.clientWidth), M = Math.max(1, n.clientHeight);
+    h.aspect = f / M, h.updateProjectionMatrix(), i.setSize(f, M, !1), m.set(f, M), c && c.group.children[0].material.resolution.copy(m);
   });
-  d.observe(e);
-  const M = { left: !1, right: !1, up: !1, down: !1 }, T = (g) => (y) => {
-    const S = y.target;
-    if (!(S && S.matches("input, textarea, select"))) {
-      if (y.key === "ArrowLeft") M.left = g;
-      else if (y.key === "ArrowRight") M.right = g;
-      else if (y.key === "ArrowUp") M.up = g;
-      else if (y.key === "ArrowDown") M.down = g;
+  y.observe(n);
+  const b = { left: !1, right: !1, up: !1, down: !1 }, A = (f) => (M) => {
+    const R = M.target;
+    if (!(R && R.matches("input, textarea, select"))) {
+      if (M.key === "ArrowLeft") b.left = f;
+      else if (M.key === "ArrowRight") b.right = f;
+      else if (M.key === "ArrowUp") b.up = f;
+      else if (M.key === "ArrowDown") b.down = f;
       else return;
-      y.preventDefault();
+      M.preventDefault();
     }
-  }, k = T(!0), E = T(!1);
-  window.addEventListener("keydown", k), window.addEventListener("keyup", E);
-  const C = new w.Clock(), ot = new w.Vector3(0, 1, 0), $ = new w.Vector3(), W = new w.Spherical(), it = 1.1, st = 0.9, rt = 0.05;
-  let D = 0;
-  const j = () => {
-    if (v) return;
-    D = requestAnimationFrame(j);
-    const g = C.getDelta(), y = (M.left ? 1 : 0) - (M.right ? 1 : 0), S = (M.down ? 1 : 0) - (M.up ? 1 : 0);
-    (y !== 0 || S !== 0) && ($.subVectors(c.position, u.target), y !== 0 && $.applyAxisAngle(ot, y * it * g), S !== 0 && (W.setFromVector3($), W.phi = Math.max(
-      rt,
-      Math.min(u.maxPolarAngle, W.phi + S * st * g)
-    ), $.setFromSpherical(W)), c.position.copy(u.target).add($)), u.update(), o.render(i, c);
+  }, T = A(!0), F = A(!1);
+  window.addEventListener("keydown", T), window.addEventListener("keyup", F);
+  const I = new w.Clock(), C = new w.Vector3(0, 1, 0), P = new w.Vector3(), X = new w.Spherical();
+  let B = 0;
+  const et = () => {
+    if (p) return;
+    B = requestAnimationFrame(et);
+    const f = I.getDelta(), M = (b.left ? 1 : 0) - (b.right ? 1 : 0), R = (b.down ? 1 : 0) - (b.up ? 1 : 0);
+    (M !== 0 || R !== 0) && (P.subVectors(h.position, u.target), M !== 0 && P.applyAxisAngle(C, M * Z.rotRate * f), R !== 0 && (X.setFromVector3(P), X.phi = Math.max(
+      Z.minPhi,
+      Math.min(u.maxPolarAngle, X.phi + R * Z.tiltRate * f)
+    ), P.setFromSpherical(X)), h.position.copy(u.target).add(P)), u.update(), i.render(s, h);
   };
-  D = requestAnimationFrame(j);
-  async function at(g) {
-    const y = p.get(g.id);
-    if (y) return y;
-    const S = H(g.lon, L), R = O(g.lat, L);
-    n == null || n(`Loading elevation tiles for ${g.name}…`);
-    const I = await tt(
-      S,
+  B = requestAnimationFrame(et);
+  async function ft(f) {
+    const M = g.get(f.id);
+    if (M) return M;
+    let R, z, E, U;
+    if (f.route && f.route.waypoints.length >= 2) {
+      const D = Ft(
+        f.route.waypoints,
+        S.zoom,
+        S.routePaddingFactor
+      );
+      R = D.cx, z = D.cy, E = D.grid, U = D.centerLat;
+    } else {
+      if (typeof f.lat != "number" || typeof f.lon != "number")
+        throw new Error(
+          `Location "${f.id}" needs either a route (≥ 2 waypoints) or both lat/lon`
+        );
+      R = _(f.lon, S.zoom), z = V(f.lat, S.zoom), E = S.grid, U = f.lat;
+    }
+    e == null || e(`Loading elevation tiles for ${f.name}…`);
+    const G = await ht(
       R,
-      L,
-      F,
-      yt,
-      (U, q) => n == null ? void 0 : n(`Loading elevation tiles for ${g.name}… ${U}/${q}`)
-    ), V = bt(I.canvas);
-    n == null || n(`Loading satellite imagery for ${g.name}…`);
-    const P = await tt(
-      S,
+      z,
+      S.zoom,
+      E,
+      S.terrainUrl,
+      (D, Q) => e == null ? void 0 : e(`Loading elevation tiles for ${f.name}… ${D}/${Q}`)
+    ), O = It(G.canvas);
+    e == null || e(`Loading satellite imagery for ${f.name}…`);
+    const yt = await ht(
       R,
-      L,
-      F,
-      xt,
-      (U, q) => n == null ? void 0 : n(`Loading satellite imagery for ${g.name}… ${U}/${q}`)
-    ), N = new w.CanvasTexture(P.canvas);
-    N.colorSpace = w.SRGBColorSpace, N.anisotropy = o.capabilities.getMaxAnisotropy(), N.minFilter = w.LinearMipmapLinearFilter, N.magFilter = w.LinearFilter, N.generateMipmaps = !0;
-    const Q = vt(g.lat, L), X = {
-      elevation: V,
-      satTexture: N,
-      meta: I.meta,
-      worldW: Q * I.meta.width,
-      worldH: Q * I.meta.height
+      z,
+      S.zoom,
+      E,
+      S.imageryUrl,
+      (D, Q) => e == null ? void 0 : e(`Loading satellite imagery for ${f.name}… ${D}/${Q}`)
+    ), $ = new w.CanvasTexture(yt.canvas);
+    $.colorSpace = w.SRGBColorSpace, $.anisotropy = i.capabilities.getMaxAnisotropy(), $.minFilter = w.LinearMipmapLinearFilter, $.magFilter = w.LinearFilter, $.generateMipmaps = !0;
+    const ot = Rt(U, S.zoom), it = {
+      elevation: O,
+      satTexture: $,
+      meta: G.meta,
+      worldW: ot * G.meta.width,
+      worldH: ot * G.meta.height
     };
-    return p.set(g.id, X), X;
+    return g.set(f.id, it), it;
   }
-  async function ct(g) {
-    if (!x && !v) {
+  async function dt(f) {
+    if (!x && !p) {
       x = !0;
       try {
-        const y = await at(g);
-        if (v) return;
-        l && (et(i, l), l = null), m && (i.remove(m.group), m.dispose(), m = null);
-        const S = kt(g, y) ?? Tt(y), R = At(y, S);
-        i.add(R.mesh), i.add(R.marker), l = R, m = $t(g, y, h), m && i.add(m.group), b !== 1 && B(b);
-        const { worldW: I } = y;
-        c.position.setFromSphericalCoords(
-          I * 0.55,
-          w.MathUtils.degToRad(5),
+        const M = await ft(f);
+        if (p) return;
+        l && (mt(s, l), l = null), c && (s.remove(c.group), c.dispose(), c = null);
+        const R = Et(f, M) ?? Lt(M), z = zt(M, R);
+        s.add(z.mesh), s.add(z.marker), l = z, c = Yt(f, M, m), c && s.add(c.group), v !== 1 && nt(v);
+        const { worldW: E } = M;
+        h.position.setFromSphericalCoords(
+          E * Y.initialDistFactor,
+          w.MathUtils.degToRad(Y.initialPolarDeg),
           0
-        ), u.target.set(0, 0, 0), u.minDistance = 800, u.maxDistance = I * 1.6, u.update(), i.fog = new w.Fog(0, I * 0.7, I * 2.4), n == null || n("");
-      } catch (y) {
-        throw console.error(y), n == null || n(`Error loading ${g.name}: ${y.message}`), y;
+        ), u.target.set(0, 0, 0), u.minDistance = K.minDistance, u.maxDistance = E * K.maxDistFactor, u.update(), s.fog = new w.Fog(J.color, E * J.nearFactor, E * J.farFactor), e == null || e("");
+      } catch (M) {
+        throw console.error(M), e == null || e(`Error loading ${f.name}: ${M.message}`), M;
       } finally {
         x = !1;
       }
     }
   }
-  function B(g) {
-    if (b = g, !l) return;
-    const { positions: y, baseElev: S, geometry: R, marker: I, focus: V } = l;
-    for (let P = 0; P < y.count; P++)
-      y.setY(P, S[P] * g);
-    y.needsUpdate = !0, R.computeVertexNormals(), I.position.y = V.elev * g + 200;
+  function nt(f) {
+    var M;
+    if (v = f, l) {
+      const { positions: R, baseElev: z, geometry: E, marker: U, focus: G } = l;
+      for (let O = 0; O < R.count; O++)
+        R.setY(O, z[O] * f);
+      R.needsUpdate = !0, E.computeVertexNormals(), U.position.y = G.elev * f + H.heightOffset;
+    }
+    (M = c == null ? void 0 : c.applyVex) == null || M.call(c, f);
   }
-  function lt() {
-    if (!v) {
-      v = !0, cancelAnimationFrame(D), d.disconnect(), window.removeEventListener("keydown", k), window.removeEventListener("keyup", E), l && et(i, l), m && (i.remove(m.group), m.dispose());
-      for (const g of p.values())
-        g.satTexture.dispose();
-      p.clear(), u.dispose(), o.dispose(), s.parentNode === e && e.removeChild(s);
+  function gt() {
+    if (!p) {
+      p = !0, cancelAnimationFrame(B), y.disconnect(), window.removeEventListener("keydown", T), window.removeEventListener("keyup", F), l && mt(s, l), c && (s.remove(c.group), c.dispose());
+      for (const f of g.values())
+        f.satTexture.dispose();
+      g.clear(), u.dispose(), i.dispose(), o.parentNode === n && n.removeChild(o);
     }
   }
-  return { switchTo: ct, applyVex: B, dispose: lt };
+  return { switchTo: dt, applyVex: nt, dispose: gt };
 }
-const zt = {
+const qt = {
   locations: !0,
   verticalExaggeration: !0,
   info: !0
-}, Gt = {
+}, Kt = {
   locations: !1,
   verticalExaggeration: !1,
   info: !1
 };
-function Ht(e) {
-  return e === !1 ? Gt : e === !0 || e === void 0 ? zt : {
-    locations: e.locations ?? !0,
-    verticalExaggeration: e.verticalExaggeration ?? !0,
-    info: e.info ?? !0
+function jt(n) {
+  return n === !1 ? Kt : n === !0 || n === void 0 ? qt : {
+    locations: n.locations ?? !0,
+    verticalExaggeration: n.verticalExaggeration ?? !0,
+    info: n.info ?? !0
   };
 }
-function Qt({
-  className: e,
+function oe({
+  className: n,
   locations: t,
-  initialLocationId: n,
-  controls: o
+  initialLocationId: e,
+  controls: i
 }) {
-  const a = Ht(o), r = Y(null), s = Y(null), [i, c] = z(null), [u, f] = z(1), [h, p] = z(""), [l, m] = z(!1);
-  Z(() => {
-    const d = r.current;
-    if (!d) return;
-    const M = Wt(d, { onStatus: p });
-    if (s.current = M, t.length > 0) {
-      const T = t.find((k) => k.id === n) ?? t[0];
-      m(!0), M.switchTo(T).then(() => c(T.id)).catch(() => {
-      }).finally(() => m(!1));
+  const r = jt(i), a = rt(null), o = rt(null), [s, h] = q(null), [u, d] = q(j.default), [m, g] = q(""), [l, c] = q(!1);
+  at(() => {
+    const y = a.current;
+    if (!y) return;
+    const b = Xt(y, { onStatus: g });
+    if (o.current = b, t.length > 0) {
+      const A = t.find((T) => T.id === e) ?? t[0];
+      c(!0), b.switchTo(A).then(() => h(A.id)).catch(() => {
+      }).finally(() => c(!1));
     }
     return () => {
-      M.dispose(), s.current = null;
+      b.dispose(), o.current = null;
     };
-  }, []), Z(() => {
-    var d;
-    (d = s.current) == null || d.applyVex(u);
+  }, []), at(() => {
+    var y;
+    (y = o.current) == null || y.applyVex(u);
   }, [u]);
-  const b = ft(
-    async (d) => {
-      if (!(l || d.id === i || !s.current)) {
-        m(!0);
+  const v = Mt(
+    async (y) => {
+      if (!(l || y.id === s || !o.current)) {
+        c(!0);
         try {
-          await s.current.switchTo(d), c(d.id);
+          await o.current.switchTo(y), h(y.id);
         } catch {
         } finally {
-          m(!1);
+          c(!1);
         }
       }
     },
-    [l, i]
-  ), x = t.find((d) => d.id === i), v = ["terrain-map", e].filter(Boolean).join(" ");
-  return /* @__PURE__ */ _("div", { ref: r, className: v, children: [
-    h && /* @__PURE__ */ A("div", { className: "terrain-map__status", children: h }),
-    a.locations && t.length > 1 && /* @__PURE__ */ A("div", { className: "terrain-map__locations", children: t.map((d) => /* @__PURE__ */ A(
+    [l, s]
+  ), x = t.find((y) => y.id === s), p = ["terrain-map", n].filter(Boolean).join(" ");
+  return /* @__PURE__ */ W("div", { ref: a, className: p, children: [
+    m && /* @__PURE__ */ L("div", { className: "terrain-map__status", children: m }),
+    r.locations && t.length > 1 && /* @__PURE__ */ L("div", { className: "terrain-map__locations", children: t.map((y) => /* @__PURE__ */ L(
       "button",
       {
         type: "button",
-        className: d.id === i ? "is-active" : void 0,
+        className: y.id === s ? "is-active" : void 0,
         disabled: l,
-        onClick: () => b(d),
-        children: d.name
+        onClick: () => v(y),
+        children: y.name
       },
-      d.id
+      y.id
     )) }),
-    a.info && /* @__PURE__ */ A("div", { className: "terrain-map__hud", children: x ? /* @__PURE__ */ _(mt, { children: [
-      /* @__PURE__ */ A("strong", { children: x.name }),
+    r.info && /* @__PURE__ */ L("div", { className: "terrain-map__hud", children: x ? /* @__PURE__ */ W(vt, { children: [
+      /* @__PURE__ */ L("strong", { children: x.name }),
       " · ",
-      /* @__PURE__ */ A("span", { children: x.subtitle }),
-      x.route && /* @__PURE__ */ _("span", { children: [
+      /* @__PURE__ */ L("span", { children: x.subtitle }),
+      x.route && /* @__PURE__ */ W("span", { children: [
         " · ",
         x.route.name
       ] }),
-      /* @__PURE__ */ A("br", {}),
-      "drag to pan · right-drag to rotate · scroll to zoom",
-      /* @__PURE__ */ A("br", {}),
-      "← → rotate · ↑ ↓ tilt",
-      /* @__PURE__ */ A("br", {}),
-      /* @__PURE__ */ A("span", { className: "terrain-map__muted", children: "elevation: AWS Terrain Tiles · imagery: ESRI World Imagery" })
-    ] }) : /* @__PURE__ */ A("span", { className: "terrain-map__muted", children: "No location selected." }) }),
-    a.verticalExaggeration && /* @__PURE__ */ _("div", { className: "terrain-map__vex", children: [
-      /* @__PURE__ */ _("label", { children: [
+      /* @__PURE__ */ L("br", {}),
+      tt.mouseHint,
+      /* @__PURE__ */ L("br", {}),
+      tt.keyHint,
+      /* @__PURE__ */ L("br", {}),
+      /* @__PURE__ */ L("span", { className: "terrain-map__muted", children: tt.attribution })
+    ] }) : /* @__PURE__ */ L("span", { className: "terrain-map__muted", children: "No location selected." }) }),
+    r.verticalExaggeration && /* @__PURE__ */ W("div", { className: "terrain-map__vex", children: [
+      /* @__PURE__ */ W("label", { children: [
         "Vertical exaggeration",
         " ",
-        /* @__PURE__ */ _("span", { children: [
+        /* @__PURE__ */ W("span", { children: [
           u.toFixed(1),
           "×"
         ] })
       ] }),
-      /* @__PURE__ */ A(
+      /* @__PURE__ */ L(
         "input",
         {
           type: "range",
-          min: 1,
-          max: 4,
-          step: 0.1,
+          min: j.min,
+          max: j.max,
+          step: j.step,
           value: u,
-          onChange: (d) => f(parseFloat(d.target.value))
+          onChange: (y) => d(parseFloat(y.target.value))
         }
       )
     ] })
   ] });
 }
 export {
-  Qt as TerrainMap
+  oe as TerrainMap
 };
 //# sourceMappingURL=index.js.map

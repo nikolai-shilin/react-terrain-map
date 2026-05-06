@@ -1,6 +1,14 @@
 export interface Waypoint {
     lat: number;
     lon: number;
+    /**
+     * Altitude in metres above sea level. When any waypoint in a route has
+     * an altitude, the route is rendered as a 3-D polyline at the supplied
+     * altitudes (waypoints without an altitude default to 0). When no
+     * waypoint has an altitude, the route is rendered as a coastline-aware
+     * sea route at `ROUTE.seaOffset`.
+     */
+    alt?: number;
     label?: string;
 }
 export interface Route {
@@ -12,8 +20,8 @@ export interface Location {
     name: string;
     subtitle: string;
     /** Center of the loaded tile grid. */
-    lat: number;
-    lon: number;
+    lat?: number;
+    lon?: number;
     /**
      * Optional point the camera should orbit around. If absent, the camera
      * orbits the highest sample in the loaded grid.
