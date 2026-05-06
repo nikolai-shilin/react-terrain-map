@@ -1,0 +1,72 @@
+{
+  "name": "react-terrain-map",
+  "version": "0.1.0",
+  "description": "React + Three.js component that renders an interactive 3D terrain map from public elevation tiles and satellite imagery.",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./styles.css": "./dist/index.css",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "sideEffects": [
+    "**/*.css"
+  ],
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build --mode lib",
+    "build:demo": "tsc -b && vite build",
+    "typecheck": "tsc --noEmit",
+    "preview": "vite preview",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "react",
+    "three",
+    "three.js",
+    "terrain",
+    "elevation",
+    "dem",
+    "map",
+    "3d",
+    "satellite",
+    "paragliding"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/your-org/react-terrain-map.git"
+  },
+  "homepage": "https://github.com/your-org/react-terrain-map#readme",
+  "bugs": {
+    "url": "https://github.com/your-org/react-terrain-map/issues"
+  },
+  "peerDependencies": {
+    "react": ">=18",
+    "react-dom": ">=18",
+    "three": ">=0.170.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@types/three": "^0.171.0",
+    "@vitejs/plugin-react": "^5.2.0",
+    "react": "^19.2.5",
+    "react-dom": "^19.2.5",
+    "three": "^0.171.0",
+    "typescript": "^5.6.3",
+    "vite": "^6.0.0",
+    "vite-plugin-dts": "^5.0.0"
+  }
+}
