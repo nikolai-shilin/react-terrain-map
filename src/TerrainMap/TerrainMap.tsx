@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { HUD, VEX } from './config';
 import { createTerrainScene } from './scene';
 import type {
   Location,
@@ -50,7 +51,7 @@ export function TerrainMap({
   const apiRef = useRef<TerrainSceneApi | null>(null);
 
   const [activeId, setActiveId] = useState<string | null>(null);
-  const [vex, setVex] = useState(1);
+  const [vex, setVex] = useState<number>(VEX.default);
   const [status, setStatus] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -131,13 +132,11 @@ export function TerrainMap({
               <strong>{active.name}</strong> · <span>{active.subtitle}</span>
               {active.route && <span> · {active.route.name}</span>}
               <br />
-              drag to pan · right-drag to rotate · scroll to zoom
+              {HUD.mouseHint}
               <br />
-              ← → rotate · ↑ ↓ tilt
+              {HUD.keyHint}
               <br />
-              <span className="terrain-map__muted">
-                elevation: AWS Terrain Tiles · imagery: ESRI World Imagery
-              </span>
+              <span className="terrain-map__muted">{HUD.attribution}</span>
             </>
           ) : (
             <span className="terrain-map__muted">No location selected.</span>
@@ -153,9 +152,9 @@ export function TerrainMap({
           </label>
           <input
             type="range"
-            min={1}
-            max={4}
-            step={0.1}
+            min={VEX.min}
+            max={VEX.max}
+            step={VEX.step}
             value={vex}
             onChange={(e) => setVex(parseFloat(e.target.value))}
           />

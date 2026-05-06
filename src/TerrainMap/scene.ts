@@ -3,25 +3,25 @@ import { MapControls } from 'three/addons/controls/MapControls.js';
 import { Line2 } from 'three/addons/lines/Line2.js';
 import { LineGeometry } from 'three/addons/lines/LineGeometry.js';
 import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
+import {
+  CAMERA,
+  COASTLINE,
+  FOG,
+  KEY_NAV,
+  LIGHTS,
+  MAP_CONTROLS,
+  MARKER,
+  RENDERER,
+  ROUTE,
+  TERRAIN_MATERIAL,
+  TILES,
+} from './config';
 import type {
   Location,
   SceneOptions,
   TerrainSceneApi,
   Waypoint,
 } from './types';
-
-// ---------- Scene constants ----------
-
-// Tile pyramid setup. Zoom 12 ≈ 9–10 km/tile at these latitudes.
-const ZOOM = 12;
-const GRID = 16;
-const TILE_PX = 256;
-const PLANE_SEGMENTS = 1024;
-
-const terrainUrl = (z: number, x: number, y: number) =>
-  `https://s3.amazonaws.com/elevation-tiles-prod/terrarium/${z}/${x}/${y}.png`;
-const imageryUrl = (z: number, x: number, y: number) =>
-  `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${y}/${x}`;
 
 // ---------- Web Mercator helpers ----------
 
@@ -65,8 +65,8 @@ async function stitchTiles(
 ): Promise<{ canvas: HTMLCanvasElement; meta: TileGrid }> {
   const x0 = Math.floor(cx - grid / 2);
   const y0 = Math.floor(cy - grid / 2);
-  const W = TILE_PX * grid;
-  const H = TILE_PX * grid;
+  const W = TILES.px * grid;
+  const H = TILES.px * grid;
 
   const canvas = document.createElement('canvas');
   canvas.width = W;
@@ -81,7 +81,7 @@ async function stitchTiles(
       const u = url(z, x0 + dx, y0 + dy);
       tasks.push(
         loadImage(u).then((img) => {
-          ctx.drawImage(img, dx * TILE_PX, dy * TILE_PX);
+          ctx.drawImage(img, dx * TILES.px, dy * TILES.px);
           loaded++;
           onProgress?.(loaded, total);
         }),
@@ -176,10 +176,10 @@ function autoSummitFocus(data: LoadedData): FocusPoint {
 
 function orbitFocus(loc: Location, data: LoadedData): FocusPoint | null {
   if (!loc.orbitPoint) return null;
-  const tx = lonToTileX(loc.orbitPoint.lon, ZOOM);
-  const ty = latToTileY(loc.orbitPoint.lat, ZOOM);
-  const u = (tx - data.meta.x0) / GRID;
-  const v = (ty - data.meta.y0) / GRID;
+  const tx = lonToTileX(loc.orbitPoint.lon, TILES.zoom);
+  const ty = latToTileY(loc.orbitPoint.lat, TILES.zoom);
+  const u = (tx - data.meta.x0) / TILES.grid;
+  const v = (ty - data.meta.y0) / TILES.grid;
   if (u < 0 || u > 1 || v < 0 || v > 1) return null;
   return {
     x: (u - 0.5) * data.worldW,
@@ -190,19 +190,22 @@ function orbitFocus(loc: Location, data: LoadedData): FocusPoint | null {
 }
 
 function buildMarker(focus: FocusPoint): THREE.Mesh {
-  const color = focus.kind === 'orbit' ? 0xffb020 : 0xff3344;
-  const emissive = focus.kind === 'orbit' ? 0x553300 : 0x661111;
+  const palette = focus.kind === 'orbit' ? MARKER.orbit : MARKER.summit;
   const marker = new THREE.Mesh(
-    new THREE.ConeGeometry(80, 320, 16),
-    new THREE.MeshStandardMaterial({ color, emissive, roughness: 0.4 }),
+    new THREE.ConeGeometry(MARKER.cone.radius, MARKER.cone.height, MARKER.cone.segments),
+    new THREE.MeshStandardMaterial({
+      color: palette.color,
+      emissive: palette.emissive,
+      roughness: MARKER.roughness,
+    }),
   );
-  marker.position.set(focus.x, focus.elev + 200, focus.z);
+  marker.position.set(focus.x, focus.elev + MARKER.heightOffset, focus.z);
   return marker;
 }
 
 function buildTerrainNodes(data: LoadedData, focus: FocusPoint): TerrainNodes {
   const { satTexture, worldW, worldH } = data;
-  const geometry = new THREE.PlaneGeometry(worldW, worldH, PLANE_SEGMENTS, PLANE_SEGMENTS);
+  const geometry = new THREE.PlaneGeometry(worldW, worldH, TILES.planeSegments, TILES.planeSegments);
   geometry.rotateX(-Math.PI / 2);
 
   const positions = geometry.attributes.position as THREE.BufferAttribute;
@@ -220,8 +223,8 @@ function buildTerrainNodes(data: LoadedData, focus: FocusPoint): TerrainNodes {
 
   const material = new THREE.MeshStandardMaterial({
     map: satTexture,
-    roughness: 0.95,
-    metalness: 0.0,
+    roughness: TERRAIN_MATERIAL.roughness,
+    metalness: TERRAIN_MATERIAL.metalness,
   });
   const mesh = new THREE.Mesh(geometry, material);
   const marker = buildMarker(focus);
@@ -484,10 +487,10 @@ function stringPull(
 }
 
 function waypointToGrid(wp: Waypoint, data: LoadedData, m: SeaMask): { x: number; y: number } {
-  const tx = lonToTileX(wp.lon, ZOOM);
-  const ty = latToTileY(wp.lat, ZOOM);
-  const u = (tx - data.meta.x0) / GRID;
-  const v = (ty - data.meta.y0) / GRID;
+  const tx = lonToTileX(wp.lon, TILES.zoom);
+  const ty = latToTileY(wp.lat, TILES.zoom);
+  const u = (tx - data.meta.x0) / TILES.grid;
+  const v = (ty - data.meta.y0) / TILES.grid;
   const gx = Math.max(0, Math.min(m.gw - 1, Math.round(u * (m.gw - 1))));
   const gy = Math.max(0, Math.min(m.gh - 1, Math.round(v * (m.gh - 1))));
   return { x: gx, y: gy };
@@ -495,13 +498,12 @@ function waypointToGrid(wp: Waypoint, data: LoadedData, m: SeaMask): { x: number
 
 function coastAwarePath(loc: Location, data: LoadedData): THREE.Vector3[] {
   if (!loc.route || loc.route.waypoints.length < 2) return [];
-  const SEA_OFFSET = 80;
-  const m = buildSeaMask(data, 8);
+  const m = buildSeaMask(data, COASTLINE.maskDownscale);
 
   const snapped: Array<{ x: number; y: number }> = [];
   for (const wp of loc.route.waypoints) {
     const g = waypointToGrid(wp, data, m);
-    snapped.push(snapToSea(g.x, g.y, m, 80) ?? g);
+    snapped.push(snapToSea(g.x, g.y, m, COASTLINE.snapMaxRadius) ?? g);
   }
 
   const grid: Array<[number, number]> = [];
@@ -525,7 +527,7 @@ function coastAwarePath(loc: Location, data: LoadedData): THREE.Vector3[] {
     const v = gy / (m.gh - 1);
     return new THREE.Vector3(
       (u - 0.5) * data.worldW,
-      SEA_OFFSET,
+      ROUTE.seaOffset,
       (v - 0.5) * data.worldH,
     );
   });
@@ -555,10 +557,10 @@ function buildRouteNodes(
   lineGeom.setPositions(positions);
 
   const lineMat = new LineMaterial({
-    color: 0x00e0ff,
-    linewidth: 3,
+    color: ROUTE.line.color,
+    linewidth: ROUTE.line.width,
     transparent: true,
-    opacity: 0.95,
+    opacity: ROUTE.line.opacity,
     depthTest: true,
   });
   lineMat.resolution.copy(resolution);
@@ -570,30 +572,39 @@ function buildRouteNodes(
   group.add(line);
 
   const portMat = new THREE.MeshStandardMaterial({
-    color: 0x00e0ff,
-    emissive: 0x004060,
-    emissiveIntensity: 1.2,
-    roughness: 0.3,
+    color: ROUTE.port.color,
+    emissive: ROUTE.port.emissive,
+    emissiveIntensity: ROUTE.port.emissiveIntensity,
+    roughness: ROUTE.port.roughness,
   });
   const portGeoms: THREE.BufferGeometry[] = [];
   for (const wp of loc.route.waypoints) {
     if (!wp.label) continue;
-    const tx = lonToTileX(wp.lon, ZOOM);
-    const ty = latToTileY(wp.lat, ZOOM);
-    const u = (tx - data.meta.x0) / GRID;
-    const v = (ty - data.meta.y0) / GRID;
+    const tx = lonToTileX(wp.lon, TILES.zoom);
+    const ty = latToTileY(wp.lat, TILES.zoom);
+    const u = (tx - data.meta.x0) / TILES.grid;
+    const v = (ty - data.meta.y0) / TILES.grid;
     const px = (u - 0.5) * data.worldW;
     const pz = (v - 0.5) * data.worldH;
 
-    const sphereGeom = new THREE.SphereGeometry(180, 18, 14);
+    const sphereGeom = new THREE.SphereGeometry(
+      ROUTE.port.sphere.radius,
+      ROUTE.port.sphere.widthSeg,
+      ROUTE.port.sphere.heightSeg,
+    );
     const sphere = new THREE.Mesh(sphereGeom, portMat);
-    sphere.position.set(px, 200, pz);
+    sphere.position.set(px, ROUTE.port.sphere.y, pz);
     group.add(sphere);
     portGeoms.push(sphereGeom);
 
-    const poleGeom = new THREE.CylinderGeometry(20, 20, 240, 8);
+    const poleGeom = new THREE.CylinderGeometry(
+      ROUTE.port.pole.radius,
+      ROUTE.port.pole.radius,
+      ROUTE.port.pole.height,
+      ROUTE.port.pole.segments,
+    );
     const pole = new THREE.Mesh(poleGeom, portMat);
-    pole.position.set(px, 120, pz);
+    pole.position.set(px, ROUTE.port.pole.y, pz);
     group.add(pole);
     portGeoms.push(poleGeom);
   }
@@ -623,7 +634,7 @@ export function createTerrainScene(
   const { onStatus } = options;
 
   const renderer = new THREE.WebGLRenderer({ antialias: true });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, RENDERER.maxPixelRatio));
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   const initialW = Math.max(1, container.clientWidth);
   const initialH = Math.max(1, container.clientHeight);
@@ -635,21 +646,26 @@ export function createTerrainScene(
   container.appendChild(canvas);
 
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x000000);
+  scene.background = new THREE.Color(RENDERER.backgroundColor);
 
-  const camera = new THREE.PerspectiveCamera(55, initialW / initialH, 10, 400_000);
+  const camera = new THREE.PerspectiveCamera(
+    CAMERA.fov,
+    initialW / initialH,
+    CAMERA.near,
+    CAMERA.far,
+  );
 
   const controls = new MapControls(camera, canvas);
   controls.enableDamping = true;
-  controls.dampingFactor = 0.08;
-  controls.maxPolarAngle = Math.PI * 0.498;
+  controls.dampingFactor = MAP_CONTROLS.dampingFactor;
+  controls.maxPolarAngle = MAP_CONTROLS.maxPolarAngle;
   controls.screenSpacePanning = false;
 
-  const sun = new THREE.DirectionalLight(0xfff4e6, 2.6);
-  sun.position.set(40000, 14000, -25000);
+  const sun = new THREE.DirectionalLight(LIGHTS.sun.color, LIGHTS.sun.intensity);
+  sun.position.set(...LIGHTS.sun.position);
   scene.add(sun);
-  scene.add(new THREE.HemisphereLight(0xb8d8ff, 0x4b3a26, 0.55));
-  scene.add(new THREE.AmbientLight(0xffffff, 0.15));
+  scene.add(new THREE.HemisphereLight(LIGHTS.hemi.sky, LIGHTS.hemi.ground, LIGHTS.hemi.intensity));
+  scene.add(new THREE.AmbientLight(LIGHTS.ambient.color, LIGHTS.ambient.intensity));
 
   const lineResolution = new THREE.Vector2(initialW, initialH);
   const dataCache = new Map<string, LoadedData>();
@@ -698,9 +714,6 @@ export function createTerrainScene(
   const yAxis = new THREE.Vector3(0, 1, 0);
   const tmpOffset = new THREE.Vector3();
   const tmpSpherical = new THREE.Spherical();
-  const ROT_RATE = 1.1;
-  const TILT_RATE = 0.9;
-  const MIN_PHI = 0.05;
   let rafId = 0;
 
   const tick = () => {
@@ -714,13 +727,13 @@ export function createTerrainScene(
     if (turn !== 0 || tilt !== 0) {
       tmpOffset.subVectors(camera.position, controls.target);
       if (turn !== 0) {
-        tmpOffset.applyAxisAngle(yAxis, turn * ROT_RATE * dt);
+        tmpOffset.applyAxisAngle(yAxis, turn * KEY_NAV.rotRate * dt);
       }
       if (tilt !== 0) {
         tmpSpherical.setFromVector3(tmpOffset);
         tmpSpherical.phi = Math.max(
-          MIN_PHI,
-          Math.min(controls.maxPolarAngle, tmpSpherical.phi + tilt * TILT_RATE * dt),
+          KEY_NAV.minPhi,
+          Math.min(controls.maxPolarAngle, tmpSpherical.phi + tilt * KEY_NAV.tiltRate * dt),
         );
         tmpOffset.setFromSpherical(tmpSpherical);
       }
@@ -737,17 +750,17 @@ export function createTerrainScene(
     const cached = dataCache.get(loc.id);
     if (cached) return cached;
 
-    const cx = lonToTileX(loc.lon, ZOOM);
-    const cy = latToTileY(loc.lat, ZOOM);
+    const cx = lonToTileX(loc.lon, TILES.zoom);
+    const cy = latToTileY(loc.lat, TILES.zoom);
 
     onStatus?.(`Loading elevation tiles for ${loc.name}…`);
-    const dem = await stitchTiles(cx, cy, ZOOM, GRID, terrainUrl, (l, t) =>
+    const dem = await stitchTiles(cx, cy, TILES.zoom, TILES.grid, TILES.terrainUrl, (l, t) =>
       onStatus?.(`Loading elevation tiles for ${loc.name}… ${l}/${t}`),
     );
     const elevation = decodeTerrarium(dem.canvas);
 
     onStatus?.(`Loading satellite imagery for ${loc.name}…`);
-    const sat = await stitchTiles(cx, cy, ZOOM, GRID, imageryUrl, (l, t) =>
+    const sat = await stitchTiles(cx, cy, TILES.zoom, TILES.grid, TILES.imageryUrl, (l, t) =>
       onStatus?.(`Loading satellite imagery for ${loc.name}… ${l}/${t}`),
     );
 
@@ -758,7 +771,7 @@ export function createTerrainScene(
     satTexture.magFilter = THREE.LinearFilter;
     satTexture.generateMipmaps = true;
 
-    const mpp = metersPerPixel(loc.lat, ZOOM);
+    const mpp = metersPerPixel(loc.lat, TILES.zoom);
     const data: LoadedData = {
       elevation,
       satTexture,
@@ -802,16 +815,16 @@ export function createTerrainScene(
 
       const { worldW } = data;
       camera.position.setFromSphericalCoords(
-        worldW * 0.55,
-        THREE.MathUtils.degToRad(5),
+        worldW * CAMERA.initialDistFactor,
+        THREE.MathUtils.degToRad(CAMERA.initialPolarDeg),
         0,
       );
       controls.target.set(0, 0, 0);
-      controls.minDistance = 800;
-      controls.maxDistance = worldW * 1.6;
+      controls.minDistance = MAP_CONTROLS.minDistance;
+      controls.maxDistance = worldW * MAP_CONTROLS.maxDistFactor;
       controls.update();
 
-      scene.fog = new THREE.Fog(0x000000, worldW * 0.7, worldW * 2.4);
+      scene.fog = new THREE.Fog(FOG.color, worldW * FOG.nearFactor, worldW * FOG.farFactor);
       onStatus?.('');
     } catch (err) {
       console.error(err);
@@ -831,7 +844,7 @@ export function createTerrainScene(
     }
     positions.needsUpdate = true;
     geometry.computeVertexNormals();
-    marker.position.y = focus.elev * vex + 200;
+    marker.position.y = focus.elev * vex + MARKER.heightOffset;
   }
 
   function dispose(): void {
